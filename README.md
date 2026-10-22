@@ -20,7 +20,7 @@ Platforms: `linux/amd64`, `linux/arm64`.
 | Tag | Built from | Rebuilt |
 | --- | --- | --- |
 | `latest` | [`main`](https://github.com/vskstudio/docker-autoheal/blob/main/Dockerfile) | on every push to `main` and every night |
-| `1.3.0`, `1.3`, `1` | [`v1.3.0`](https://github.com/vskstudio/docker-autoheal/blob/v1.3.0/Dockerfile) | on release |
+| `1.4.0`, `1.4`, `1` | [`v1.4.0`](https://github.com/vskstudio/docker-autoheal/blob/v1.4.0/Dockerfile) | on release |
 | `sha-<commit>` | the matching commit | once |
 
 Pin a version tag (or a `sha-*` tag) in production. Use `latest` to follow the nightly rebuilds.
@@ -29,6 +29,13 @@ Pin a version tag (or a `sha-*` tag) in production. Use `latest` to follow the n
 - Alpine 3.24 base (upstream: 3.18, end of life). The CA bundle no longer trusts the distrusted emSign/eMudhra intermediates.
 - SIGTERM handler kills the sleep child instead of re-signalling itself, so the container stops cleanly (upstream [#131](https://github.com/willfarrell/docker-autoheal/pull/131)).
 - Refuses to start when the Docker unix socket exists but is not writable (upstream [#146](https://github.com/willfarrell/docker-autoheal/pull/146), rewritten in POSIX sh).
+- `autoheal=false` opts a container out regardless of case; upstream only honoured `False` (upstream [#153](https://github.com/willfarrell/docker-autoheal/issues/153)).
+- Paused containers are left alone (upstream [#98](https://github.com/willfarrell/docker-autoheal/issues/98)).
+- A Docker API error or an unreachable socket is logged and retried on the next interval instead of crashing the loop with a `jq` error (upstream [#35](https://github.com/willfarrell/docker-autoheal/issues/35)).
+- Webhook payloads are built with `jq`, so container names with quotes or backslashes produce valid JSON; failed deliveries are logged, and the startup log says whether `WEBHOOK_URL` and `APPRISE_URL` are set without printing them (upstream [#137](https://github.com/willfarrell/docker-autoheal/issues/137)).
+- `WEBHOOK_JSON_KEY` defaults to `content` everywhere (upstream [#152](https://github.com/willfarrell/docker-autoheal/issues/152)).
+- `tzdata` is installed, so `TZ` works (upstream [#143](https://github.com/willfarrell/docker-autoheal/issues/143)).
+- Integration tests run in CI before every image is published.
 - Image published to GHCR with OCI labels, multi-arch, nightly rebuild.
 
 ## How to use
@@ -76,8 +83,9 @@ The certificates and keys need these names and resides under /certs inside the c
 > See https://docs.docker.com/engine/security/https/ for how to configure TCP with mTLS
 
 ### Change Timezone
-If you need the timezone to match the local machine, you can map the `/etc/localtime` into the container.
+Set `TZ`, or map the host's `/etc/localtime` into the container.
 ```bash
+docker run ... -e TZ=Europe/Paris
 docker run ... -v /etc/localtime:/etc/localtime:ro
 ```
 
@@ -89,6 +97,8 @@ b) Set ENV `AUTOHEAL_CONTAINER_LABEL=all` to watch all running containers;<br/>
 c) Set ENV `AUTOHEAL_CONTAINER_LABEL` to existing container label that has the value `true`;<br/>
 
 > Note: You must apply `HEALTHCHECK` to your docker images first.<br/>
+> Note: A container labelled `autoheal=false` is never restarted, which is how you exclude one when using `AUTOHEAL_CONTAINER_LABEL=all`. Paused containers are never restarted either.<br/>
+> Note: In Compose, quote label values (`autoheal: "true"`), YAML would otherwise turn them into booleans.<br/>
 > See https://docs.docker.com/engine/reference/builder/#healthcheck for details.
 
 #### Docker Compose (example)
@@ -129,6 +139,9 @@ services:
 |`DOCKER_SOCK=/var/run/docker.sock`    |Unix socket for curl requests to Docker API|
 |`CURL_TIMEOUT=30`                     |--max-time seconds for curl requests to Docker API|
 |`WEBHOOK_URL=""`                      |post message to the webhook if a container was restarted (or restart failed)|
+|`WEBHOOK_JSON_KEY=content`            |JSON key holding the message in the webhook payload (`content` suits Discord, `text` suits Slack)|
+|`APPRISE_URL=""`                      |post `{"title":"Autoheal","body":...}` to an Apprise API endpoint|
+|`POST_RESTART_SCRIPT=""`              |script run after each restart, with the container name, short id, state and timeout as arguments|
 
 ## Testing (building locally)
 ```bash
@@ -143,6 +156,6 @@ docker run -d \
 ## Releasing
 Push a semver tag; the workflow publishes `X.Y.Z`, `X.Y` and `X`:
 ```bash
-git tag v1.3.1
-git push origin v1.3.1
+git tag v1.4.1
+git push origin v1.4.1
 ```
