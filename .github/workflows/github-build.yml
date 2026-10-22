@@ -15,7 +15,17 @@ env:
   IMAGE: ghcr.io/vskstudio/autoheal
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Integration tests
+        run: AUTOHEAL_CONTAINER_LABEL=autoheal-${{ github.run_id }} ./tests/tests.sh autoheal-test-${{ github.run_id }}
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
